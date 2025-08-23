@@ -32,7 +32,7 @@ def create_app(include_migrate: bool = False):
         from flask_migrate import Migrate
         Migrate(app, db)
 
-
+    app.register_blueprint(dash)
 
     @app.route("/")
     def home():

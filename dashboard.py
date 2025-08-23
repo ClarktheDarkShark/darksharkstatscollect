@@ -87,13 +87,11 @@ def api_live():
     # print(f">>> [dashboard] api_live called for channel='{channel}'")
     # ─── 1️⃣ In-memory live stats ─────────────────────────────────────────
 
-    chat_bot  = _bot_holder.get("bot")        # your original chat bot
+    # chat_bot  = _bot_holder.get("bot")        # your original chat bot
     stats_bot = _bot_holder.get("stats_bot")  # the new StatsBot instance  🔸
 
     raw_map1 = {}
-    if chat_bot:
-        collector = chat_bot.get_cog("DailyStatsCollector")
-        raw_map1  = getattr(collector, "stats_by_channel", {}) if collector else {}
+
 
     # pull directly from StatsBot, not from a cog                     🔸
     raw_map2 = getattr(stats_bot, "stats_by_channel", {}) if stats_bot else {}
