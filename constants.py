@@ -8,6 +8,8 @@ CHANNEL_NAME_TEST = 'darksharkai'
 
 MAIN_CHANNELS = ['thelegendyagami', 'clarkthedarkshark']
 TEST_USERS = [
+    'thelegendyagami', 
+    'clarkthedarkshark',
     'smallant', 
     'alaskabel', 
     'smallantmom', 
