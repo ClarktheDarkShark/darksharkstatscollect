@@ -6,6 +6,12 @@ dotenv
 Flask==3.0.3
 flask_migrate
 Flask-Caching
+google-api-core==2.21.0
+google-api-python-client==2.149.0
+google-auth==2.35.0
+google-auth-httplib2==0.2.0
+google-auth-oauthlib==1.2.1
+googleapis-common-protos==1.65.0
 gunicorn>=20,<22
 
 holidays==0.60
