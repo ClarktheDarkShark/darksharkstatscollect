@@ -46,7 +46,7 @@ def api_channels():
     from main import _bot_holder
     from constants import TEST_USERS
 
-    bot = _bot_holder.get("bot")
+    bot = _bot_holder.get("stats_bot")
     if not bot:
         return jsonify([]), 204
 
