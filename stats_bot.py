@@ -857,7 +857,7 @@ class StatsBot(commands.Bot):
         if current_time_ - self.last_ping_time >= save_freq:
             try:
                 async with aiohttp.ClientSession() as session:
-                    async with session.get('https://darksharkai-6cdde1cc2a2f.herokuapp.com') as resp:
+                    async with session.get('https://darksharkstatscollect-a6c60b29865d.herokuapp.com') as resp:
                         await resp.text()
                 self.last_ping_time = current_time_
             except Exception as e:
