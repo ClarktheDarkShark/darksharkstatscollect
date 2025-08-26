@@ -668,3 +668,21 @@ class TimeSeries(db.Model):
 
     def __repr__(self):
         return f"<TimeSeries date={self.stream_date!r}>"
+
+
+class StreamState(db.Model):
+    """Persisted per-channel stream state to avoid in-memory loss."""
+
+    __tablename__ = "stream_state"
+
+    stream_name = db.Column(db.String(128), primary_key=True)
+    payload     = db.Column(db.JSON, nullable=False)
+    updated_at  = db.Column(
+        db.DateTime,
+        nullable=False,
+        server_default=db.func.now(),
+        onupdate=db.func.now(),
+    )
+
+    def __repr__(self):
+        return f"<StreamState stream={self.stream_name!r}>"
