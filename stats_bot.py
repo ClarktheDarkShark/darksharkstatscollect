@@ -10,7 +10,7 @@ from openai import OpenAI
 from openai import BadRequestError
 
 from db import db
-from models import DailyStats, TimeSeries
+from models import DailyStats, TimeSeries, StreamState
 from utils import get_oauth_token
 import utils
 from constants import MAIN_CHANNELS
@@ -101,7 +101,6 @@ class StatsBot(commands.Bot):
         self._queued_channels = rest
         # runtime state
         self.live_channels:          set[str] = set()
-        self.stats_by_channel:       dict[str, dict] = {}
         self._last_sent_at:          dict[str, datetime] = {}
         self.processed_events:       set[str] = set()
         self.bulk_gift_ids:          set[str] = set()
@@ -114,6 +113,32 @@ class StatsBot(commands.Bot):
 
         # start the polling loop
         # self.metrics_collector.start()
+
+    def _load_stats(self, chan: str) -> dict | None:
+        """Fetch persisted stats for a channel from the database."""
+        from main import app
+        with app.app_context():
+            row = StreamState.query.filter_by(stream_name=chan).first()
+            return row.payload if row else None
+
+    def _save_stats(self, chan: str, stats: dict) -> None:
+        """Persist stats for a channel to the database."""
+        from main import app
+        with app.app_context():
+            row = StreamState.query.filter_by(stream_name=chan).first()
+            if row:
+                row.payload = stats
+            else:
+                row = StreamState(stream_name=chan, payload=stats)
+                db.session.add(row)
+            db.session.commit()
+
+    def _delete_stats(self, chan: str) -> None:
+        """Remove persisted stats for a channel."""
+        from main import app
+        with app.app_context():
+            StreamState.query.filter_by(stream_name=chan).delete()
+            db.session.commit()
 
     async def event_disconnect(self):
         print("Disconnected from Twitch. Attempting to reconnect...")
@@ -256,7 +281,7 @@ class StatsBot(commands.Bot):
                 'gift_subs_bool':         False,
             }
 
-            self.stats_by_channel[chan] = stats
+            self._save_stats(chan, stats)
             self._last_sent_at[chan]    = datetime.utcnow()
             self.live_channels.add(chan)
 
@@ -270,7 +295,7 @@ class StatsBot(commands.Bot):
 
         for live in streams:
             chan  = live.user.name.lower()
-            stats = self.stats_by_channel.get(chan)
+            stats = self._load_stats(chan)
             if not stats:
                 continue
 
@@ -330,6 +355,8 @@ class StatsBot(commands.Bot):
             if stats['game_category'] != live.game_name:
                 stats['game_category'] = live.game_name
                 stats['category_changes'] += 1
+
+            self._save_stats(chan, stats)
 
             await self.live_stream_data(chan)
 
@@ -465,7 +492,7 @@ class StatsBot(commands.Bot):
             print(f"[{chan}] stats committed to DB")
 
         # clean-up
-        self.stats_by_channel.pop(chan, None)
+        self._delete_stats(chan)
         self._last_sent_at.pop(chan, None)
         self.live_channels.discard(chan)
 
@@ -473,7 +500,7 @@ class StatsBot(commands.Bot):
 
     # ─────────────────────────  LIVE STREAM  ───────────────────────────────
     async def live_stream_data(self, chan: str):
-        stats = self.stats_by_channel.get(chan)
+        stats = self._load_stats(chan)
         if not stats:
             return
 
@@ -502,6 +529,7 @@ class StatsBot(commands.Bot):
         except BadRequestError:
             stats['avg_sentiment_score'] = 0.5
             stats['sentiment_scores'].append(0.5)
+        self._save_stats(chan, stats)
         sentiment_score = stats['avg_sentiment_score']
         pos_neg_ratio   = stats.get("positive_negative_ratio")
 
@@ -596,6 +624,7 @@ class StatsBot(commands.Bot):
             db.session.add(row)
             db.session.commit()
             print(f"[{chan}] stats committed to DB")
+        self._save_stats(chan, stats)
 
 
 
@@ -606,7 +635,7 @@ class StatsBot(commands.Bot):
             return
 
         chan  = message.channel.name.lower()
-        stats = self.stats_by_channel.get(chan)
+        stats = self._load_stats(chan)
         if not stats:
             return
 
@@ -645,10 +674,12 @@ class StatsBot(commands.Bot):
             stats["bits_donated"]          += int(bits)
             stats["donation_events_count"] += 1
 
+        self._save_stats(chan, stats)
+
 
     async def event_raw_usernotice(self, channel, tags):
         chan  = channel.name.lower()
-        stats = self.stats_by_channel.get(chan)
+        stats = self._load_stats(chan)
         if not stats:
             return
 
@@ -680,19 +711,23 @@ class StatsBot(commands.Bot):
             stats['raids_received']       += 1
             stats['raid_viewers_received'] += viewers
 
+        self._save_stats(chan, stats)
+
 
     async def event_clearchat(self, channel, tags):
         chan = channel.name.lower()
-        stats = self.stats_by_channel.get(chan)
+        stats = self._load_stats(chan)
         if stats:
             stats["timeouts_bans"] = stats.get("timeouts_bans", 0) + 1
+            self._save_stats(chan, stats)
 
     async def event_cheer(self, event):
         chan = event.channel.name.lower()
-        stats = self.stats_by_channel.get(chan)
+        stats = self._load_stats(chan)
         if stats:
             stats['bits_donated']          += event.bits
             stats['donation_events_count'] += 1
+            self._save_stats(chan, stats)
 
     async def calculate_avg_sentiment_score(
         self,
