@@ -335,31 +335,29 @@ class StatsBot(commands.Bot):
 
     # ─────────────────────────  STREAM END  ───────────────────────────────
     async def _on_stream_end(self, chan: str):
-        stats = self.stats_by_channel.get(chan)
-        if not stats:
-            return
-
-        stats['avg_sentiment_score'] = await self.calculate_avg_sentiment_score(stats, chan)
-
-        duration_min   = (datetime.now(EST) - stats["start_time"]).total_seconds() / 60
-        avg_viewers    = stats.get("avg_concurrent_viewers", 0)
-        peak_viewers   = stats.get("peak_concurrent_viewers", 0)
-        uniq_viewers   = len(stats["unique_chatters"])
-        total_subs     = (
-            stats["new_subscriptions_t1"]
-            + stats["new_subscriptions_t2_t3"]
-            + stats["resubscriptions"]
-            + stats["gifted_subs_received"]
-            - stats["gifted_subs_given"]
-            - stats["subscription_cancellations"]
-        )
-        stats["total_subscriptions"] = total_subs
-
-        # import here to avoid circular main <-> bot
         from main import app
 
         with app.app_context():
-            last = (
+            rows = (
+                TimeSeries.query
+                .filter_by(stream_name=chan)
+                .order_by(TimeSeries.id)
+                .all()
+            )
+            if not rows:
+                return
+
+            first = rows[0]
+            last  = rows[-1]
+
+            # sentiment stats across all snapshots
+            avg_sent, min_sent, max_sent = db.session.query(
+                func.avg(TimeSeries.avg_sentiment_score),
+                func.min(TimeSeries.avg_sentiment_score),
+                func.max(TimeSeries.avg_sentiment_score),
+            ).filter_by(stream_name=chan, stream_date=last.stream_date).first()
+
+            prev = (
                 DailyStats.query
                 .filter_by(stream_name=chan)
                 .order_by(
@@ -368,17 +366,17 @@ class StatsBot(commands.Bot):
                 )
                 .first()
             )
-            days_since = (stats["stream_date"] - last.stream_date).days if last else 0
 
-            seven_days_ago = stats["stream_date"] - timedelta(days=7)
-            three_days_ago = stats["stream_date"] - timedelta(days=3)
+            days_since = (last.stream_date - prev.stream_date).days if prev else 0
+            seven_days_ago = last.stream_date - timedelta(days=7)
+            three_days_ago = last.stream_date - timedelta(days=3)
 
             avg_subs_7 = (
                 db.session.query(func.avg(DailyStats.total_subscriptions))
                 .filter(
                     DailyStats.stream_name == chan,
                     DailyStats.stream_date >= seven_days_ago,
-                    DailyStats.stream_date < stats["stream_date"],
+                    DailyStats.stream_date < last.stream_date,
                 )
                 .scalar() or 0.0
             )
@@ -387,83 +385,80 @@ class StatsBot(commands.Bot):
                 .filter(
                     DailyStats.stream_name == chan,
                     DailyStats.stream_date >= three_days_ago,
-                    DailyStats.stream_date < stats["stream_date"],
+                    DailyStats.stream_date < last.stream_date,
                 )
                 .scalar() or 0.0
             )
             viewers_3d_moving_avg = (
-                db.session. query(func.avg(DailyStats.avg_concurrent_viewers))
+                db.session.query(func.avg(DailyStats.avg_concurrent_viewers))
                 .filter(
                     DailyStats.stream_name == chan,
                     DailyStats.stream_date >= three_days_ago,
-                    DailyStats.stream_date < stats["stream_date"],
+                    DailyStats.stream_date < last.stream_date,
                 )
                 .scalar() or 0.0
             )
-            sent_scores = stats['sentiment_scores']
-            min_sent = min(sent_scores) if sent_scores else None
-            max_sent = max(sent_scores) if sent_scores else None
 
-            prev_peak = last.peak_concurrent_viewers if last else peak_viewers
-            day_over_day_peak_change = peak_viewers - prev_peak
+            prev_peak = prev.peak_concurrent_viewers if prev else last.peak_concurrent_viewers
+            day_over_day_peak_change = last.peak_concurrent_viewers - prev_peak
 
             daily = DailyStats(
                 stream_name               = chan,
-                stream_date               = stats["stream_date"],
-                day_of_week               = stats["stream_date"].strftime("%A"),
-                is_weekend                = stats["stream_date"].weekday() >= 5,
-                is_holiday                = stats["stream_date"] in US_HOLIDAYS,
-                stream_start_time         = stats["start_time"].time(),
+                stream_date               = last.stream_date,
+                day_of_week               = last.stream_date.strftime("%A"),
+                is_weekend                = last.stream_date.weekday() >= 5,
+                is_holiday                = last.stream_date in US_HOLIDAYS,
+                stream_start_time         = first.stream_start_time,
                 days_since_previous_stream= days_since,
-                stream_duration           = int(duration_min),
-                avg_concurrent_viewers    = avg_viewers,
-                peak_concurrent_viewers   = peak_viewers,
-                unique_viewers            = uniq_viewers,
-                viewer_growth_rate        = stats["viewer_growth_rate"],
-                total_num_chats           = stats["total_num_chats"],
-                total_chatters            = uniq_viewers,
-                chat_msgs_per_minute      = stats["chat_msgs_per_minute"],
-                total_emotes_used         = sum(len(e.split(":")) for e in stats["emote_set"]),
-                unique_emotes_used        = len(stats["emote_set"]),
-                followers_start           = stats["followers_start"],
-                followers_end             = stats["followers_end"],
-                net_follower_change       = stats["net_follower_change"],
-                total_subscriptions       = total_subs,
-                new_subscriptions_t1      = stats["new_subscriptions_t1"],
-                new_subscriptions_t2_t3   = stats["new_subscriptions_t2_t3"],
-                resubscriptions           = stats["resubscriptions"],
-                gifted_subs_received      = stats["gifted_subs_received"],
-                gifted_subs_given         = stats["gifted_subs_given"],
-                subscription_cancellations= stats["subscription_cancellations"],
-                bits_donated              = stats["bits_donated"],
-                donation_events_count     = stats["donation_events_count"],
-                total_donation_amount     = stats["total_donation_amount"],
-                raids_received            = stats["raids_received"],
-                raid_viewers_received     = stats["raid_viewers_received"],
-                polls_run                 = stats["polls_run"],
-                poll_participation        = stats["poll_participation"],
-                predictions_run           = stats["predictions_run"],
-                prediction_participants   = stats["prediction_participants"],
-                game_category             = stats["game_category"] or "Unknown",
-                category_changes          = stats["category_changes"],
-                title_length              = stats["title_length"],
-                has_giveaway              = stats["has_giveaway"],
-                has_qna                   = stats["has_qna"],
-                tags                      = stats["tags"],
-                moderation_actions        = stats["moderation_actions"],
-                messages_deleted          = stats["messages_deleted"],
-                timeouts_bans             = stats["timeouts_bans"],
-                avg_sentiment_score       = stats["avg_sentiment_score"],
+                stream_duration           = last.stream_duration,
+                avg_concurrent_viewers    = last.avg_concurrent_viewers,
+                peak_concurrent_viewers   = last.peak_concurrent_viewers,
+                unique_viewers            = last.unique_viewers,
+                viewer_growth_rate        = last.viewer_growth_rate,
+                total_num_chats           = last.total_num_chats,
+                total_chatters            = last.total_chatters,
+                chat_msgs_per_minute      = last.chat_msgs_per_minute,
+                total_emotes_used         = last.total_emotes_used,
+                unique_emotes_used        = last.unique_emotes_used,
+                followers_start           = first.followers_start,
+                followers_end             = last.followers_end,
+                net_follower_change       = last.net_follower_change,
+                total_subscriptions       = last.total_subscriptions,
+                new_subscriptions_t1      = last.new_subscriptions_t1,
+                new_subscriptions_t2_t3   = last.new_subscriptions_t2_t3,
+                resubscriptions           = last.resubscriptions,
+                gifted_subs_received      = last.gifted_subs_received,
+                gifted_subs_given         = last.gifted_subs_given,
+                subscription_cancellations= last.subscription_cancellations,
+                bits_donated              = last.bits_donated,
+                donation_events_count     = last.donation_events_count,
+                total_donation_amount     = last.total_donation_amount,
+                raids_received            = last.raids_received,
+                raid_viewers_received     = last.raid_viewers_received,
+                polls_run                 = last.polls_run,
+                poll_participation        = last.poll_participation,
+                predictions_run           = last.predictions_run,
+                prediction_participants   = last.prediction_participants,
+                game_category             = last.game_category,
+                category_changes          = last.category_changes,
+                title_length              = last.title_length,
+                has_giveaway              = last.has_giveaway,
+                has_qna                   = last.has_qna,
+                tags                      = last.tags,
+                moderation_actions        = last.moderation_actions,
+                messages_deleted          = last.messages_deleted,
+                timeouts_bans             = last.timeouts_bans,
+                avg_sentiment_score       = float(avg_sent or 0.0),
                 min_sentiment_score       = min_sent,
                 max_sentiment_score       = max_sent,
-                positive_negative_ratio   = stats["positive_negative_ratio"],
-                subs_per_avg_viewer       = stats["subs_per_avg_viewer"],
-                chat_msgs_per_viewer      = stats["chat_msgs_per_viewer"],
+                positive_negative_ratio   = last.positive_negative_ratio,
+                subs_per_avg_viewer       = last.subs_per_avg_viewer,
+                chat_msgs_per_viewer      = last.chat_msgs_per_viewer,
                 subs_7d_moving_avg        = float(avg_subs_7),
                 subs_3d_moving_avg        = float(avg_subs_3),
-                viewers_3d_moving_avg     = None,
+                viewers_3d_moving_avg     = float(viewers_3d_moving_avg),
                 day_over_day_peak_change  = day_over_day_peak_change,
-                gift_subs_bool            = stats["gift_subs_bool"],
+                gift_subs_bool            = last.gift_subs_bool,
             )
             db.session.add(daily)
             db.session.commit()
@@ -496,78 +491,7 @@ class StatsBot(commands.Bot):
         
         self._last_sent_at[chan] = now
 
-        # ── 2) Define our look-back window ──────────────────────────────
-        interval  = self.SENTIMENT_INTERVAL
-        threshold = now_est - interval
-
-        # ── 3) VIEWER METRICS over window ───────────────────────────────
-        samples = stats.get("viewer_counts", [])
-        # how many 20s-ticks fit in the window?
-        step   = max(1, int(interval.total_seconds() // 20))
-        window = samples[-step:]
-        avg_v  = sum(window) / len(window) if window else 0.0
-        peak_v = max(window) if window else 0
-
-        # ── 4) CHAT METRICS over window ────────────────────────────────
-        recent_msgs = [
-            m for m in self.conversation_history_metadata
-            if m.get("role")=="user"
-               and m.get("channel_name")==chan
-               and datetime.fromisoformat(m["timestamp"])\
-                     .astimezone(EST) >= threshold
-        ]
-        chat_count   = len(recent_msgs)
-        unique_chat  = len({m["name"] for m in recent_msgs})
-        chats_per_min= chat_count / (interval.total_seconds()/60 or 1)
-
-        # ── 5) EMOTE METRICS over window ────────────────────────────────
-        emotes = set()
-        for m in recent_msgs:
-            for p in m.get("tags","").split("/"):
-                if p: emotes.add(p.split(":")[0])
-        total_emotes  = sum(tag.count(":") for tag in emotes)
-        unique_emotes = len(emotes)
-
-        # ── 6) DELTA helper for all cumulative counters ────────────────
-        def delta(key):
-            now_val = stats.get(key, 0)
-            prev    = stats.get(f"last_{key}", 0)
-            stats[f"last_{key}"] = now_val
-            return now_val - prev
-
-        # subscriptions
-        new_t1   = delta("new_subscriptions_t1")
-        new_t23  = delta("new_subscriptions_t2_t3")
-        resub    = delta("resubscriptions")
-        gift_rec = delta("gifted_subs_received")
-        gift_giv = delta("gifted_subs_given")
-        cancels  = delta("subscription_cancellations")
-        subs_int = (new_t1 + new_t23 + resub + gift_rec - gift_giv - cancels)
-
-        # Followers
-        net_follow_cg = delta("net_follower_change")
-
-        # bits & donations
-        bits_int       = delta("bits_donated")
-        donate_cnt_int = delta("donation_events_count")
-        donate_amt_int = delta("total_donation_amount")
-
-        # raids
-        raids_int        = delta("raids_received")
-        raid_viewers_int = delta("raid_viewers_received")
-
-        # polls & predictions
-        polls_int        = delta("polls_run")
-        poll_part_int    = delta("poll_participation")
-        preds_int        = delta("predictions_run")
-        pred_part_int    = delta("prediction_participants")
-
-        # misc counters
-        catchg_int       = delta("category_changes")
-        titlelen_int     = delta("title_length")
-        modacts_int      = delta("moderation_actions")
-        delmsgs_int      = delta("messages_deleted")
-        tosbans_int      = delta("timeouts_bans")
+        # counters are maintained cumulatively in stats; no window math needed
 
         # sentiment (live)
         try:
@@ -607,61 +531,60 @@ class StatsBot(commands.Bot):
                 is_holiday                = row_date in US_HOLIDAYS,
                 stream_start_time         = stats["start_time"].time(),
                 days_since_previous_stream= days_prev,
-                stream_duration           = int(interval.total_seconds()/60),
+                stream_duration           = stats["stream_duration"],
 
-                avg_concurrent_viewers    = avg_v,
-                peak_concurrent_viewers   = peak_v,
-                unique_viewers            = unique_chat,
-                viewer_growth_rate        = ((peak_v - (window[0] if window else 0))
-                                             / (window[0] or 1)),
+                avg_concurrent_viewers    = stats["avg_concurrent_viewers"],
+                peak_concurrent_viewers   = stats["peak_concurrent_viewers"],
+                unique_viewers            = stats["unique_viewers"],
+                viewer_growth_rate        = stats["viewer_growth_rate"],
 
-                total_num_chats           = chat_count,
-                total_chatters            = unique_chat,
-                chat_msgs_per_minute      = chats_per_min,
+                total_num_chats           = stats["total_num_chats"],
+                total_chatters            = stats["total_chatters"],
+                chat_msgs_per_minute      = stats["chat_msgs_per_minute"],
 
-                total_emotes_used         = total_emotes,
-                unique_emotes_used        = unique_emotes,
+                total_emotes_used         = stats["total_emotes_used"],
+                unique_emotes_used        = stats["unique_emotes_used"],
 
-                followers_start           = None,
-                followers_end             = None,
-                net_follower_change       = net_follow_cg,
+                followers_start           = stats["followers_start"],
+                followers_end             = stats["followers_end"],
+                net_follower_change       = stats["net_follower_change"],
 
-                total_subscriptions       = subs_int,
-                new_subscriptions_t1      = new_t1,
-                new_subscriptions_t2_t3   = new_t23,
-                resubscriptions           = resub,
-                gifted_subs_received      = gift_rec,
-                gifted_subs_given         = gift_giv,
-                subscription_cancellations= cancels,
+                total_subscriptions       = stats["total_subscriptions"],
+                new_subscriptions_t1      = stats["new_subscriptions_t1"],
+                new_subscriptions_t2_t3   = stats["new_subscriptions_t2_t3"],
+                resubscriptions           = stats["resubscriptions"],
+                gifted_subs_received      = stats["gifted_subs_received"],
+                gifted_subs_given         = stats["gifted_subs_given"],
+                subscription_cancellations= stats["subscription_cancellations"],
 
-                bits_donated              = bits_int,
-                donation_events_count     = donate_cnt_int,
-                total_donation_amount     = donate_amt_int,
+                bits_donated              = stats["bits_donated"],
+                donation_events_count     = stats["donation_events_count"],
+                total_donation_amount     = stats["total_donation_amount"],
 
-                raids_received            = raids_int,
-                raid_viewers_received     = raid_viewers_int,
+                raids_received            = stats["raids_received"],
+                raid_viewers_received     = stats["raid_viewers_received"],
 
-                polls_run                 = polls_int,
-                poll_participation        = poll_part_int,
-                predictions_run           = preds_int,
-                prediction_participants   = pred_part_int,
+                polls_run                 = stats["polls_run"],
+                poll_participation        = stats["poll_participation"],
+                predictions_run           = stats["predictions_run"],
+                prediction_participants   = stats["prediction_participants"],
 
                 game_category             = stats["game_category"] or "Unknown",
-                category_changes          = catchg_int,
-                title_length              = titlelen_int,
+                category_changes          = stats["category_changes"],
+                title_length              = stats["title_length"],
                 has_giveaway              = stats["has_giveaway"],
                 has_qna                   = stats["has_qna"],
                 tags                      = stats["tags"],
 
-                moderation_actions        = modacts_int,
-                messages_deleted          = delmsgs_int,
-                timeouts_bans             = tosbans_int,
+                moderation_actions        = stats["moderation_actions"],
+                messages_deleted          = stats["messages_deleted"],
+                timeouts_bans             = stats["timeouts_bans"],
 
                 avg_sentiment_score       = sentiment_score,
                 positive_negative_ratio   = pos_neg_ratio,
 
-                subs_per_avg_viewer       = (subs_int / (avg_v or 1)),
-                chat_msgs_per_viewer      = (chat_count / (unique_chat or 1)),
+                subs_per_avg_viewer       = stats["subs_per_avg_viewer"],
+                chat_msgs_per_viewer      = stats["chat_msgs_per_viewer"],
 
                 subs_7d_moving_avg        = None,
                 subs_3d_moving_avg        = None,
