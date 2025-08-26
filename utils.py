@@ -1,7 +1,7 @@
 # utils.py
 
 import requests
-import json
+import json, base64
 import os
 import re
 import aiohttp
