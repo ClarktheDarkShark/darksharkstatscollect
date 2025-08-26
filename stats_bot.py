@@ -689,7 +689,8 @@ class StatsBot(commands.Bot):
 
         await self.keep_alive(chan)
         author_name = message.author.name
-        print(f"{author_name}: {message.content} ({chan})")
+        
+        # print(f"{author_name}: {message.content} ({chan})")
 
         if author_name != 'nightbot' and author_name != 'wizebot':
             self.conversation_history.append({
