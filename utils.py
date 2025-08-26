@@ -415,21 +415,23 @@ def download_file_from_drive(service, file_id, destination):
 
 
 def authenticate_gdrive():
-    """Authenticate with Google Drive using the service account and return a service object."""
-    SCOPES = ['https://www.googleapis.com/auth/drive.file']
+    SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
-    # Load credentials from the service account file specified in constants.py
-    # Get the current working directory
-    current_directory = os.getcwd()
+    b64_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64")
+    raw_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
 
-    # List all files and directories in the current directory
-    files = os.listdir(current_directory)
+    if b64_json:
+        info = json.loads(base64.b64decode(b64_json).decode("utf-8"))
+    elif raw_json:
+        info = json.loads(raw_json)
+    else:
+        raise RuntimeError(
+            "Set GOOGLE_SERVICE_ACCOUNT_B64 or GOOGLE_SERVICE_ACCOUNT_JSON"
+        )
 
-    creds = service_account.Credentials.from_service_account_file(
-        os.getenv('SERVICE_ACCOUNT_FILE'), scopes=SCOPES
-    )
-    service = build('drive', 'v3', credentials=creds)
-    return service
+    # If your JSON has "\n" sequences inside private_key, json.loads turns them into real newlines automatically.
+    creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+    return build("drive", "v3", credentials=creds)
 
 
 
