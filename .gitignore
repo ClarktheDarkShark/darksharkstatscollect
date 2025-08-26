@@ -1,1 +1,9 @@
+
 client_secrets.json
+
+.env
+.env.*
+*.key
+*.pem
+*.creds.json
+
