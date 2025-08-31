@@ -130,6 +130,54 @@ class StatsBot(commands.Bot):
                 delay = min(delay * 2, 300)
                 self._reconnect_delay = delay
 
+    def _rehydrate_stats(self, row: TimeSeries) -> dict:
+        """Reconstruct in-memory stats dict from a TimeSeries row."""
+        start_dt = datetime.combine(row.stream_date, row.stream_start_time)
+        if start_dt.tzinfo is None:
+            start_dt = EST.localize(start_dt)
+        stats = {
+            'stream_name':            row.stream_name,
+            'stream_date':            row.stream_date,
+            'start_time':             start_dt,
+            'viewer_counts':          [row.avg_concurrent_viewers],
+            'unique_chatters':        {f'pre_{i}' for i in range(row.total_chatters)},
+            'emote_set':              {f'pre_{i}' for i in range(row.unique_emotes_used)},
+            'total_num_chats':        row.total_num_chats,
+            'followers_start':        row.followers_start,
+            'followers_end':          row.followers_end,
+            'new_subscriptions_t1':   row.new_subscriptions_t1,
+            'new_subscriptions_t2_t3':row.new_subscriptions_t2_t3,
+            'resubscriptions':        row.resubscriptions,
+            'gifted_subs_received':   row.gifted_subs_received,
+            'gifted_subs_given':      row.gifted_subs_given,
+            'subscription_cancellations': row.subscription_cancellations,
+            'bits_donated':           row.bits_donated,
+            'donation_events_count':  row.donation_events_count,
+            'total_donation_amount':  row.total_donation_amount,
+            'raids_received':         row.raids_received,
+            'raid_viewers_received':  row.raid_viewers_received,
+            'polls_run':              row.polls_run,
+            'poll_participation':     row.poll_participation,
+            'predictions_run':        row.predictions_run,
+            'prediction_participants':row.prediction_participants,
+            'game_category':          row.game_category,
+            'category_changes':       row.category_changes,
+            'title_length':           row.title_length,
+            'has_giveaway':           row.has_giveaway,
+            'has_qna':                row.has_qna,
+            'tags':                   row.tags or [],
+            'moderation_actions':     row.moderation_actions,
+            'messages_deleted':       row.messages_deleted,
+            'timeouts_bans':          row.timeouts_bans,
+            'avg_sentiment_score':    row.avg_sentiment_score or 0.5,
+            'min_sentiment_score':    row.avg_sentiment_score or 0.5,
+            'max_sentiment_score':    row.avg_sentiment_score or 0.5,
+            'sentiment_scores':       [row.avg_sentiment_score or 0.5],
+            'positive_negative_ratio':row.positive_negative_ratio,
+            'gift_subs_bool':         row.gift_subs_bool,
+        }
+        return stats
+
     async def event_ready(self):
         print(f"Logged in as | {self.nick}")
         # join the remaining channels in small bursts
@@ -211,60 +259,76 @@ class StatsBot(commands.Bot):
             user    = (await self.fetch_users(names=[chan]))[0]
             token   = get_oauth_token(CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)
             f_cnt   = await fetch_follower_count(user.id, token)
-            
+
             try:
                 tag_names = await fetch_stream_tags(user.id, token)
             except Exception as e:
                 print(f"[{chan}] failed to fetch tags: {e}")
                 tag_names = []
 
-            stats = {
-                'stream_name':            chan,
-                'stream_date':            start.date(),
-                'start_time':             start,
-                'viewer_counts':          [],
-                'unique_chatters':        set(),
-                'emote_set':              set(),
-                'total_num_chats':        0,
-                'followers_start':        f_cnt,
-                'followers_end':          f_cnt,
-                'new_subscriptions_t1':   0,
-                'new_subscriptions_t2_t3':0,
-                'resubscriptions':        0,
-                'gifted_subs_received':   0,
-                'gifted_subs_given':      0,
-                'subscription_cancellations': 0,
-                'bits_donated':           0,
-                'donation_events_count':  0,
-                'total_donation_amount':  0.0,
-                'raids_received':         0,
-                'raid_viewers_received':  0,
-                'polls_run':              0,
-                'poll_participation':     0,
-                'predictions_run':        0,
-                'prediction_participants':0,
-                'game_category':          live.game_name.lower(),
-                'category_changes':       0,
-                'title_length':           len(live.game_name),
-                'has_giveaway':           False,
-                'has_qna':                False,
-                'tags':                   tag_names,
-                'moderation_actions':     0,
-                'messages_deleted':       0,
-                'timeouts_bans':          0,
-                'avg_sentiment_score':    0.5,
-                'min_sentiment_score':    0.5,
-                'max_sentiment_score':    0.5,
-                'sentiment_scores':       [],
-                'positive_negative_ratio':None,
-                'gift_subs_bool':         False,
-            }
+            # Attempt to rehydrate existing stats to avoid data loss after restart
+            from main import app
+            with app.app_context():
+                last = (
+                    TimeSeries.query
+                    .filter_by(stream_name=chan, stream_date=start.date())
+                    .order_by(TimeSeries.id.desc())
+                    .first()
+                )
 
-            self.stats_by_channel[chan] = stats
-            self._last_sent_at[chan]    = datetime.utcnow()
+            if last:
+                stats = self._rehydrate_stats(last)
+                stats['followers_end'] = f_cnt
+                stats['tags'] = tag_names
+                self.stats_by_channel[chan] = stats
+                print(f"[{chan}] stream resumed – rehydrated from DB")
+            else:
+                stats = {
+                    'stream_name':            chan,
+                    'stream_date':            start.date(),
+                    'start_time':             start,
+                    'viewer_counts':          [],
+                    'unique_chatters':        set(),
+                    'emote_set':              set(),
+                    'total_num_chats':        0,
+                    'followers_start':        f_cnt,
+                    'followers_end':          f_cnt,
+                    'new_subscriptions_t1':   0,
+                    'new_subscriptions_t2_t3':0,
+                    'resubscriptions':        0,
+                    'gifted_subs_received':   0,
+                    'gifted_subs_given':      0,
+                    'subscription_cancellations': 0,
+                    'bits_donated':           0,
+                    'donation_events_count':  0,
+                    'total_donation_amount':  0.0,
+                    'raids_received':         0,
+                    'raid_viewers_received':  0,
+                    'polls_run':              0,
+                    'poll_participation':     0,
+                    'predictions_run':        0,
+                    'prediction_participants':0,
+                    'game_category':          live.game_name.lower(),
+                    'category_changes':       0,
+                    'title_length':           len(live.game_name),
+                    'has_giveaway':           False,
+                    'has_qna':                False,
+                    'tags':                   tag_names,
+                    'moderation_actions':     0,
+                    'messages_deleted':       0,
+                    'timeouts_bans':          0,
+                    'avg_sentiment_score':    0.5,
+                    'min_sentiment_score':    0.5,
+                    'max_sentiment_score':    0.5,
+                    'sentiment_scores':       [],
+                    'positive_negative_ratio':None,
+                    'gift_subs_bool':         False,
+                }
+                self.stats_by_channel[chan] = stats
+                print(f"[{chan}] stream started – tracking…")
+
+            self._last_sent_at[chan] = datetime.utcnow()
             self.live_channels.add(chan)
-
-            print(f"[{chan}] stream started – tracking…")
         except Exception:
             import traceback; traceback.print_exc()
 
@@ -277,7 +341,21 @@ class StatsBot(commands.Bot):
             chan  = live.user.name.lower()
             stats = self.stats_by_channel.get(chan)
             if not stats:
-                continue
+                from main import app
+                with app.app_context():
+                    last = (
+                        TimeSeries.query
+                        .filter_by(stream_name=chan, stream_date=datetime.now(EST).date())
+                        .order_by(TimeSeries.id.desc())
+                        .first()
+                    )
+                if last:
+                    stats = self._rehydrate_stats(last)
+                    self.stats_by_channel[chan] = stats
+                    self._last_sent_at[chan] = datetime.utcnow()
+                    self.live_channels.add(chan)
+                else:
+                    continue
 
             # raw samples
             stats['viewer_counts'].append(live.viewer_count)
