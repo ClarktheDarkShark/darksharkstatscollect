@@ -139,7 +139,8 @@ class StatsBot(commands.Bot):
         print(f"Connected to: {[ch.name for ch in self.connected_channels if ch]}")
 
         # 🔺  NOW start the polling loop (all joins finished)
-        self.metrics_collector.start()
+        if not self.metrics_collector.is_running:
+            self.metrics_collector.start()
 
     async def save_chat_history(self):
         await utils.save_data(
@@ -266,6 +267,7 @@ class StatsBot(commands.Bot):
 
     # ─────────────────────────  LIVE POLLING  ───────────────────────────────
     async def _collect_polling_metrics(self, streams):
+        global OAUTH_TOKEN
         now = datetime.utcnow()
 
         for live in streams:
@@ -276,12 +278,24 @@ class StatsBot(commands.Bot):
 
             # raw samples
             stats['viewer_counts'].append(live.viewer_count)
+
+            # refresh follower token when necessary
             try:
                 stats['followers_end'] = await fetch_follower_count(
                     live.user.id, OAUTH_TOKEN
                 )
-            except aiohttp.ClientResponseError:
-                pass
+            except aiohttp.ClientResponseError as e:
+                if e.status in (401, 403):
+                    # token likely expired – refresh and retry once
+                    OAUTH_TOKEN = get_oauth_token(CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)
+                    try:
+                        stats['followers_end'] = await fetch_follower_count(
+                            live.user.id, OAUTH_TOKEN
+                        )
+                    except aiohttp.ClientResponseError:
+                        pass
+                else:
+                    pass
 
             # sentiment every 20 min
             # if now - self._last_sent_at[chan] >= self.SENTIMENT_INTERVAL:
@@ -469,6 +483,11 @@ class StatsBot(commands.Bot):
         self._last_sent_at.pop(chan, None)
         self.live_channels.discard(chan)
 
+        # Reset event caches when no streams remain to prevent unbounded growth
+        if not self.live_channels:
+            self.processed_events.clear()
+            self.bulk_gift_ids.clear()
+
 
 
     # ─────────────────────────  LIVE STREAM  ───────────────────────────────
@@ -477,35 +496,25 @@ class StatsBot(commands.Bot):
         if not stats:
             return
 
-        # ── 1) Throttle to one run per interval ──────────────────────────
         now = datetime.utcnow()
         now_est = now.replace(tzinfo=pytz.utc).astimezone(EST)
 
+        # sentiment is recalculated at a slower interval, but we still
+        # commit a snapshot every time this function is called
         last = self._last_sent_at.get(chan)
-        # print()
-        # print('last', last)
-        # print('now', now)
-        # print
-        if last is not None and (now - last) < self.SENTIMENT_INTERVAL:
-            return
-        
-        self._last_sent_at[chan] = now
+        if last is None or (now - last) >= self.SENTIMENT_INTERVAL:
+            self._last_sent_at[chan] = now
+            try:
+                stats['avg_sentiment_score'] = await self.calculate_avg_sentiment_score(
+                    stats, chan, live=True
+                )
+                stats['sentiment_scores'].append(stats['avg_sentiment_score'])
+            except BadRequestError:
+                stats['avg_sentiment_score'] = 0.5
+                stats['sentiment_scores'].append(0.5)
 
-        # counters are maintained cumulatively in stats; no window math needed
-
-        # sentiment (live)
-        try:
-            stats['avg_sentiment_score'] = await self.calculate_avg_sentiment_score(
-                stats, chan, live=True
-            )
-            stats['sentiment_scores'].append(stats['avg_sentiment_score'])
-        except BadRequestError:
-            stats['avg_sentiment_score'] = 0.5
-            stats['sentiment_scores'].append(0.5)
-        sentiment_score = stats['avg_sentiment_score']
+        sentiment_score = stats.get('avg_sentiment_score', 0.5)
         pos_neg_ratio   = stats.get("positive_negative_ratio")
-
-
 
         # ── 8) Build & commit the interval snapshot ─────────────────────
         from main import app
@@ -621,6 +630,8 @@ class StatsBot(commands.Bot):
                 'content': message.content,
                 'name': author_name
             })
+            if len(self.conversation_history) > 500:
+                self.conversation_history = self.conversation_history[-500:]
             # print(f"[DEBUG➜APPEND] raw message.channel = {message.channel!r}")
             # print(f"[DEBUG➜APPEND] channel_name var = {channel_name!r}")
             self.conversation_history_metadata.append({
@@ -630,6 +641,8 @@ class StatsBot(commands.Bot):
                 'timestamp': datetime.now(EST).isoformat(),
                 'channel_name': chan.lower()
             })
+            if len(self.conversation_history_metadata) > 500:
+                self.conversation_history_metadata = self.conversation_history_metadata[-500:]
 
         stats['total_num_chats'] += 1
         stats['unique_chatters'].add(message.author.name)
