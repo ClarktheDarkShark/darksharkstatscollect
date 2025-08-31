@@ -130,6 +130,54 @@ class StatsBot(commands.Bot):
                 delay = min(delay * 2, 300)
                 self._reconnect_delay = delay
 
+    def _rehydrate_stats(self, row: TimeSeries) -> dict:
+        """Reconstruct in-memory stats dict from a TimeSeries row."""
+        start_dt = datetime.combine(row.stream_date, row.stream_start_time)
+        if start_dt.tzinfo is None:
+            start_dt = EST.localize(start_dt)
+        stats = {
+            'stream_name':            row.stream_name,
+            'stream_date':            row.stream_date,
+            'start_time':             start_dt,
+            'viewer_counts':          [row.avg_concurrent_viewers],
+            'unique_chatters':        {f'pre_{i}' for i in range(row.total_chatters)},
+            'emote_set':              {f'pre_{i}' for i in range(row.unique_emotes_used)},
+            'total_num_chats':        row.total_num_chats,
+            'followers_start':        row.followers_start,
+            'followers_end':          row.followers_end,
+            'new_subscriptions_t1':   row.new_subscriptions_t1,
+            'new_subscriptions_t2_t3':row.new_subscriptions_t2_t3,
+            'resubscriptions':        row.resubscriptions,
+            'gifted_subs_received':   row.gifted_subs_received,
+            'gifted_subs_given':      row.gifted_subs_given,
+            'subscription_cancellations': row.subscription_cancellations,
+            'bits_donated':           row.bits_donated,
+            'donation_events_count':  row.donation_events_count,
+            'total_donation_amount':  row.total_donation_amount,
+            'raids_received':         row.raids_received,
+            'raid_viewers_received':  row.raid_viewers_received,
+            'polls_run':              row.polls_run,
+            'poll_participation':     row.poll_participation,
+            'predictions_run':        row.predictions_run,
+            'prediction_participants':row.prediction_participants,
+            'game_category':          row.game_category,
+            'category_changes':       row.category_changes,
+            'title_length':           row.title_length,
+            'has_giveaway':           row.has_giveaway,
+            'has_qna':                row.has_qna,
+            'tags':                   row.tags or [],
+            'moderation_actions':     row.moderation_actions,
+            'messages_deleted':       row.messages_deleted,
+            'timeouts_bans':          row.timeouts_bans,
+            'avg_sentiment_score':    row.avg_sentiment_score or 0.5,
+            'min_sentiment_score':    row.avg_sentiment_score or 0.5,
+            'max_sentiment_score':    row.avg_sentiment_score or 0.5,
+            'sentiment_scores':       [row.avg_sentiment_score or 0.5],
+            'positive_negative_ratio':row.positive_negative_ratio,
+            'gift_subs_bool':         row.gift_subs_bool,
+        }
+        return stats
+
     async def event_ready(self):
         print(f"Logged in as | {self.nick}")
         # join the remaining channels in small bursts
@@ -139,7 +187,11 @@ class StatsBot(commands.Bot):
         print(f"Connected to: {[ch.name for ch in self.connected_channels if ch]}")
 
         # 🔺  NOW start the polling loop (all joins finished)
-        self.metrics_collector.start()
+        try:
+            self.metrics_collector.start()
+        except RuntimeError:
+            # Routine already running (or similar) — safe to ignore
+            pass
 
     async def save_chat_history(self):
         await utils.save_data(
@@ -207,81 +259,124 @@ class StatsBot(commands.Bot):
             user    = (await self.fetch_users(names=[chan]))[0]
             token   = get_oauth_token(CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)
             f_cnt   = await fetch_follower_count(user.id, token)
-            
+
             try:
                 tag_names = await fetch_stream_tags(user.id, token)
             except Exception as e:
                 print(f"[{chan}] failed to fetch tags: {e}")
                 tag_names = []
 
-            stats = {
-                'stream_name':            chan,
-                'stream_date':            start.date(),
-                'start_time':             start,
-                'viewer_counts':          [],
-                'unique_chatters':        set(),
-                'emote_set':              set(),
-                'total_num_chats':        0,
-                'followers_start':        f_cnt,
-                'followers_end':          f_cnt,
-                'new_subscriptions_t1':   0,
-                'new_subscriptions_t2_t3':0,
-                'resubscriptions':        0,
-                'gifted_subs_received':   0,
-                'gifted_subs_given':      0,
-                'subscription_cancellations': 0,
-                'bits_donated':           0,
-                'donation_events_count':  0,
-                'total_donation_amount':  0.0,
-                'raids_received':         0,
-                'raid_viewers_received':  0,
-                'polls_run':              0,
-                'poll_participation':     0,
-                'predictions_run':        0,
-                'prediction_participants':0,
-                'game_category':          live.game_name.lower(),
-                'category_changes':       0,
-                'title_length':           len(live.game_name),
-                'has_giveaway':           False,
-                'has_qna':                False,
-                'tags':                   tag_names,
-                'moderation_actions':     0,
-                'messages_deleted':       0,
-                'timeouts_bans':          0,
-                'avg_sentiment_score':    0.5,
-                'min_sentiment_score':    0.5,
-                'max_sentiment_score':    0.5,
-                'sentiment_scores':       [],
-                'positive_negative_ratio':None,
-                'gift_subs_bool':         False,
-            }
+            # Attempt to rehydrate existing stats to avoid data loss after restart
+            from main import app
+            with app.app_context():
+                last = (
+                    TimeSeries.query
+                    .filter_by(stream_name=chan, stream_date=start.date())
+                    .order_by(TimeSeries.id.desc())
+                    .first()
+                )
 
-            self.stats_by_channel[chan] = stats
-            self._last_sent_at[chan]    = datetime.utcnow()
+            if last:
+                stats = self._rehydrate_stats(last)
+                stats['followers_end'] = f_cnt
+                stats['tags'] = tag_names
+                self.stats_by_channel[chan] = stats
+                print(f"[{chan}] stream resumed – rehydrated from DB")
+            else:
+                stats = {
+                    'stream_name':            chan,
+                    'stream_date':            start.date(),
+                    'start_time':             start,
+                    'viewer_counts':          [],
+                    'unique_chatters':        set(),
+                    'emote_set':              set(),
+                    'total_num_chats':        0,
+                    'followers_start':        f_cnt,
+                    'followers_end':          f_cnt,
+                    'new_subscriptions_t1':   0,
+                    'new_subscriptions_t2_t3':0,
+                    'resubscriptions':        0,
+                    'gifted_subs_received':   0,
+                    'gifted_subs_given':      0,
+                    'subscription_cancellations': 0,
+                    'bits_donated':           0,
+                    'donation_events_count':  0,
+                    'total_donation_amount':  0.0,
+                    'raids_received':         0,
+                    'raid_viewers_received':  0,
+                    'polls_run':              0,
+                    'poll_participation':     0,
+                    'predictions_run':        0,
+                    'prediction_participants':0,
+                    'game_category':          live.game_name.lower(),
+                    'category_changes':       0,
+                    'title_length':           len(live.game_name),
+                    'has_giveaway':           False,
+                    'has_qna':                False,
+                    'tags':                   tag_names,
+                    'moderation_actions':     0,
+                    'messages_deleted':       0,
+                    'timeouts_bans':          0,
+                    'avg_sentiment_score':    0.5,
+                    'min_sentiment_score':    0.5,
+                    'max_sentiment_score':    0.5,
+                    'sentiment_scores':       [],
+                    'positive_negative_ratio':None,
+                    'gift_subs_bool':         False,
+                }
+                self.stats_by_channel[chan] = stats
+                print(f"[{chan}] stream started – tracking…")
+
+            self._last_sent_at[chan] = datetime.utcnow()
             self.live_channels.add(chan)
-
-            print(f"[{chan}] stream started – tracking…")
         except Exception:
             import traceback; traceback.print_exc()
 
     # ─────────────────────────  LIVE POLLING  ───────────────────────────────
     async def _collect_polling_metrics(self, streams):
+        global OAUTH_TOKEN
         now = datetime.utcnow()
 
         for live in streams:
             chan  = live.user.name.lower()
             stats = self.stats_by_channel.get(chan)
             if not stats:
-                continue
+                from main import app
+                with app.app_context():
+                    last = (
+                        TimeSeries.query
+                        .filter_by(stream_name=chan, stream_date=datetime.now(EST).date())
+                        .order_by(TimeSeries.id.desc())
+                        .first()
+                    )
+                if last:
+                    stats = self._rehydrate_stats(last)
+                    self.stats_by_channel[chan] = stats
+                    self._last_sent_at[chan] = datetime.utcnow()
+                    self.live_channels.add(chan)
+                else:
+                    continue
 
             # raw samples
             stats['viewer_counts'].append(live.viewer_count)
+
+            # refresh follower token when necessary
             try:
                 stats['followers_end'] = await fetch_follower_count(
                     live.user.id, OAUTH_TOKEN
                 )
-            except aiohttp.ClientResponseError:
-                pass
+            except aiohttp.ClientResponseError as e:
+                if e.status in (401, 403):
+                    # token likely expired – refresh and retry once
+                    OAUTH_TOKEN = get_oauth_token(CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)
+                    try:
+                        stats['followers_end'] = await fetch_follower_count(
+                            live.user.id, OAUTH_TOKEN
+                        )
+                    except aiohttp.ClientResponseError:
+                        pass
+                else:
+                    pass
 
             # sentiment every 20 min
             # if now - self._last_sent_at[chan] >= self.SENTIMENT_INTERVAL:
@@ -469,6 +564,11 @@ class StatsBot(commands.Bot):
         self._last_sent_at.pop(chan, None)
         self.live_channels.discard(chan)
 
+        # Reset event caches when no streams remain to prevent unbounded growth
+        if not self.live_channels:
+            self.processed_events.clear()
+            self.bulk_gift_ids.clear()
+
 
 
     # ─────────────────────────  LIVE STREAM  ───────────────────────────────
@@ -477,35 +577,25 @@ class StatsBot(commands.Bot):
         if not stats:
             return
 
-        # ── 1) Throttle to one run per interval ──────────────────────────
         now = datetime.utcnow()
         now_est = now.replace(tzinfo=pytz.utc).astimezone(EST)
 
+        # sentiment is recalculated at a slower interval, but we still
+        # commit a snapshot every time this function is called
         last = self._last_sent_at.get(chan)
-        # print()
-        # print('last', last)
-        # print('now', now)
-        # print
-        if last is not None and (now - last) < self.SENTIMENT_INTERVAL:
-            return
-        
-        self._last_sent_at[chan] = now
+        if last is None or (now - last) >= self.SENTIMENT_INTERVAL:
+            self._last_sent_at[chan] = now
+            try:
+                stats['avg_sentiment_score'] = await self.calculate_avg_sentiment_score(
+                    stats, chan, live=True
+                )
+                stats['sentiment_scores'].append(stats['avg_sentiment_score'])
+            except BadRequestError:
+                stats['avg_sentiment_score'] = 0.5
+                stats['sentiment_scores'].append(0.5)
 
-        # counters are maintained cumulatively in stats; no window math needed
-
-        # sentiment (live)
-        try:
-            stats['avg_sentiment_score'] = await self.calculate_avg_sentiment_score(
-                stats, chan, live=True
-            )
-            stats['sentiment_scores'].append(stats['avg_sentiment_score'])
-        except BadRequestError:
-            stats['avg_sentiment_score'] = 0.5
-            stats['sentiment_scores'].append(0.5)
-        sentiment_score = stats['avg_sentiment_score']
+        sentiment_score = stats.get('avg_sentiment_score', 0.5)
         pos_neg_ratio   = stats.get("positive_negative_ratio")
-
-
 
         # ── 8) Build & commit the interval snapshot ─────────────────────
         from main import app
@@ -621,6 +711,8 @@ class StatsBot(commands.Bot):
                 'content': message.content,
                 'name': author_name
             })
+            if len(self.conversation_history) > 500:
+                self.conversation_history = self.conversation_history[-500:]
             # print(f"[DEBUG➜APPEND] raw message.channel = {message.channel!r}")
             # print(f"[DEBUG➜APPEND] channel_name var = {channel_name!r}")
             self.conversation_history_metadata.append({
@@ -630,6 +722,8 @@ class StatsBot(commands.Bot):
                 'timestamp': datetime.now(EST).isoformat(),
                 'channel_name': chan.lower()
             })
+            if len(self.conversation_history_metadata) > 500:
+                self.conversation_history_metadata = self.conversation_history_metadata[-500:]
 
         stats['total_num_chats'] += 1
         stats['unique_chatters'].add(message.author.name)
