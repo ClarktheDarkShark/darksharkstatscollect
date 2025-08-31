@@ -139,8 +139,11 @@ class StatsBot(commands.Bot):
         print(f"Connected to: {[ch.name for ch in self.connected_channels if ch]}")
 
         # 🔺  NOW start the polling loop (all joins finished)
-        if not self.metrics_collector.is_running:
+        try:
             self.metrics_collector.start()
+        except RuntimeError:
+            # Routine already running (or similar) — safe to ignore
+            pass
 
     async def save_chat_history(self):
         await utils.save_data(
