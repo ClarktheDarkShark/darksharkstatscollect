@@ -66,7 +66,9 @@ class DailyStats(db.Model):
         nullable=False
     )  # e.g. 200
 
-    # Float: viewer growth rate ((end − start) / start)
+    # Float: viewer growth rate ignoring the first and last five minutes
+    # of the stream; baseline is the first non-zero viewer count after
+    # that initial window
     viewer_growth_rate = db.Column(
         db.Float,
         nullable=False
@@ -403,7 +405,9 @@ class TimeSeries(db.Model):
         nullable=False
     )  # e.g. 200
 
-    # Float: viewer growth rate ((end − start) / start)
+    # Float: viewer growth rate ignoring the first and last five minutes
+    # of the stream; baseline is the first non-zero viewer count after
+    # that initial window
     viewer_growth_rate = db.Column(
         db.Float,
         nullable=False

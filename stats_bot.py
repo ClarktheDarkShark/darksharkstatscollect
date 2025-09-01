@@ -388,12 +388,22 @@ class StatsBot(commands.Bot):
             stats['stream_duration'] = int(duration_min)
 
             if stats['viewer_counts']:
-                avg_v     = sum(stats['viewer_counts']) / len(stats['viewer_counts'])
-                peak_v    = max(stats['viewer_counts'])
-                first_v   = stats['viewer_counts'][0]
-                stats['avg_concurrent_viewers'] = avg_v
-                stats['peak_concurrent_viewers'] = peak_v
-                stats['viewer_growth_rate'] = (peak_v - first_v) / (first_v or 1)
+                counts = stats['viewer_counts']
+                # Ignore the first and last five minutes to avoid early spikes
+                # as viewers join and drops when the stream winds down.
+                trimmed_counts = counts[5:-5] if len(counts) > 10 else []
+
+                if trimmed_counts:
+                    avg_v  = sum(trimmed_counts) / len(trimmed_counts)
+                    peak_v = max(trimmed_counts)
+                    first_v = next((v for v in trimmed_counts if v > 0), trimmed_counts[0])
+                    stats['avg_concurrent_viewers'] = avg_v
+                    stats['peak_concurrent_viewers'] = peak_v
+                    stats['viewer_growth_rate'] = (peak_v - first_v) / (first_v or 1)
+                else:
+                    stats['avg_concurrent_viewers'] = 0
+                    stats['peak_concurrent_viewers'] = 0
+                    stats['viewer_growth_rate'] = 0.0
             else:
                 stats['avg_concurrent_viewers'] = 0
                 stats['peak_concurrent_viewers'] = 0
