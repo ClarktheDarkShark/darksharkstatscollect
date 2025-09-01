@@ -36,7 +36,8 @@ TEST_USERS = [
     'rdcmysticlee',
     'jynxzi',
     'agent00',
-    'burtonttv']
+    'burtonttv',
+    'bluesr']
 
 DEFAULT_PROMPT = [
                 {
