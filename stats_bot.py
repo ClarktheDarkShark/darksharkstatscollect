@@ -115,20 +115,20 @@ class StatsBot(commands.Bot):
         # start the polling loop
         # self.metrics_collector.start()
 
-    async def event_disconnect(self):
-        print("Disconnected from Twitch. Attempting to reconnect...")
-        delay = getattr(self, "_reconnect_delay", 1)
-        while True:
-            await asyncio.sleep(delay)
-            try:
-                await self.connect()
-                print("Reconnected to Twitch.")
-                self._reconnect_delay = 1
-                break
-            except Exception as e:
-                print(f"Reconnect failed: {e}")
-                delay = min(delay * 2, 300)
-                self._reconnect_delay = delay
+    # async def event_disconnect(self):
+    #     print("Disconnected from Twitch. Attempting to reconnect...")
+    #     delay = getattr(self, "_reconnect_delay", 1)
+    #     while True:
+    #         await asyncio.sleep(delay)
+    #         try:
+    #             await self.connect()
+    #             print("Reconnected to Twitch.")
+    #             self._reconnect_delay = 1
+    #             break
+    #         except Exception as e:
+    #             print(f"Reconnect failed: {e}")
+    #             delay = min(delay * 2, 300)
+    #             self._reconnect_delay = delay
 
     def _rehydrate_stats(self, row: TimeSeries) -> dict:
         """Reconstruct in-memory stats dict from a TimeSeries row."""
@@ -192,6 +192,10 @@ class StatsBot(commands.Bot):
         except RuntimeError:
             # Routine already running (or similar) — safe to ignore
             pass
+        try:
+            self._watchdog.start()
+        except RuntimeError:
+            pass
 
     async def save_chat_history(self):
         await utils.save_data(
@@ -219,6 +223,19 @@ class StatsBot(commands.Bot):
             for entry in tail
         ]
 
+
+
+    @routines.routine(seconds=60)
+    async def _watchdog(self):
+        # Lightweight: no manual reconnect here.
+        # Just log and let the outer loop / TwitchIO handle recovery.
+        try:
+            # If absolutely necessary, you can check connected channels:
+            chs = [ch.name for ch in self.connected_channels if ch]
+            if not chs:
+                print("[watchdog] No connected channels detected.")
+        except Exception as e:
+            print(f"[watchdog] Error checking status: {e}")
 
 
     # ─────────────────────────  POLLING LOOP  ───────────────────────────────
