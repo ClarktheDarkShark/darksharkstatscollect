@@ -19,7 +19,7 @@ from constants import MAIN_CHANNELS
 CLIENT_ID       = os.getenv("CLIENT_ID_BILLY")
 CLIENT_SECRET   = os.getenv("CLIENT_SECRET_BILLY")
 REFRESH_TOKEN   = os.getenv("REFRESH_TOKEN_BILLY")
-OAUTH_TOKEN     = get_oauth_token(CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)
+OAUTH_TOKEN, REFRESH_TOKEN = get_oauth_token(CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)
 
 EST             = pytz.timezone("US/Eastern")
 US_HOLIDAYS     = holidays.US()
@@ -274,7 +274,11 @@ class StatsBot(commands.Bot):
             start   = datetime.now(EST)
             chan    = live.user.name.lower()
             user    = (await self.fetch_users(names=[chan]))[0]
-            token   = get_oauth_token(CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)
+            global REFRESH_TOKEN
+            token, REFRESH_TOKEN = get_oauth_token(CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)
+            # update the bot's tokens so future refreshes succeed
+            self._http.token = token
+            self._http._refresh_token = REFRESH_TOKEN
             f_cnt   = await fetch_follower_count(user.id, token)
 
             try:
@@ -351,7 +355,7 @@ class StatsBot(commands.Bot):
 
     # ─────────────────────────  LIVE POLLING  ───────────────────────────────
     async def _collect_polling_metrics(self, streams):
-        global OAUTH_TOKEN
+        global OAUTH_TOKEN, REFRESH_TOKEN
         now = datetime.utcnow()
 
         for live in streams:
@@ -385,7 +389,9 @@ class StatsBot(commands.Bot):
             except aiohttp.ClientResponseError as e:
                 if e.status in (401, 403):
                     # token likely expired – refresh and retry once
-                    OAUTH_TOKEN = get_oauth_token(CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)
+                    OAUTH_TOKEN, REFRESH_TOKEN = get_oauth_token(CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)
+                    self._http.token = OAUTH_TOKEN
+                    self._http._refresh_token = REFRESH_TOKEN
                     try:
                         stats['followers_end'] = await fetch_follower_count(
                             live.user.id, OAUTH_TOKEN
