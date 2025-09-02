@@ -46,12 +46,12 @@ def refresh_oauth_token(client_id, client_secret, refresh_token):
         new_access_token = token_response['access_token']
         new_refresh_token = token_response.get('refresh_token', refresh_token)
 
-
         # Update refresh token if provided by Twitch
         if new_refresh_token != refresh_token:
             update_refresh_token(new_refresh_token)
 
-        return new_access_token
+        # Return both the access token and the potentially updated refresh token
+        return new_access_token, new_refresh_token
     else:
         raise Exception(f"Failed to refresh token: {response.text}")
 
