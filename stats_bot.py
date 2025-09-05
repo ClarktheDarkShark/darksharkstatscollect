@@ -271,7 +271,10 @@ class StatsBot(commands.Bot):
     # ─────────────────────────  STREAM START  ───────────────────────────────
     async def _on_stream_start(self, live):
         try:
-            start   = datetime.now(EST)
+            # Twitch provides the actual stream start time; use it for accuracy.
+            # Falling back to "now" can cause drift and, with the rehydrate
+            # logic below, may mistakenly re-use an old start time.
+            start   = live.started_at.replace(tzinfo=pytz.utc).astimezone(EST)
             chan    = live.user.name.lower()
             user    = (await self.fetch_users(names=[chan]))[0]
             global REFRESH_TOKEN
@@ -298,12 +301,20 @@ class StatsBot(commands.Bot):
                 )
 
             if last:
-                stats = self._rehydrate_stats(last)
-                stats['followers_end'] = f_cnt
-                stats['tags'] = tag_names
-                self.stats_by_channel[chan] = stats
-                print(f"[{chan}] stream resumed – rehydrated from DB")
-            else:
+                # Only rehydrate if the last snapshot belongs to this stream.
+                last_start = datetime.combine(last.stream_date, last.stream_start_time)
+                if last_start.tzinfo is None:
+                    last_start = EST.localize(last_start)
+                if abs((start - last_start).total_seconds()) <= 15 * 60:
+                    stats = self._rehydrate_stats(last)
+                    stats['followers_end'] = f_cnt
+                    stats['tags'] = tag_names
+                    self.stats_by_channel[chan] = stats
+                    print(f"[{chan}] stream resumed – rehydrated from DB")
+                else:
+                    last = None
+
+            if not last:
                 stats = {
                     'stream_name':            chan,
                     'stream_date':            start.date(),
@@ -329,9 +340,9 @@ class StatsBot(commands.Bot):
                     'poll_participation':     0,
                     'predictions_run':        0,
                     'prediction_participants':0,
-                    'game_category':          live.game_name.lower(),
+                    'game_category':          (live.game_name or "unknown").lower(),
                     'category_changes':       0,
-                    'title_length':           len(live.game_name),
+                    'title_length':           len(live.title or ""),
                     'has_giveaway':           False,
                     'has_qna':                False,
                     'tags':                   tag_names,
