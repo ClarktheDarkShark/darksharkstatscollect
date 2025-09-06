@@ -479,16 +479,16 @@ class StatsBot(commands.Bot):
         with app.app_context():
             # Fetch the latest snapshot to determine the current stream date,
             # then restrict the aggregation to rows from that date only.
-            latest = (
+            last = (
                 TimeSeries.query
                 .filter_by(stream_name=chan)
                 .order_by(TimeSeries.id.desc())
                 .first()
             )
-            if not latest:
+            if not last:
                 return
 
-            current_date = latest.stream_date
+            current_date = last.stream_date
             rows = (
                 TimeSeries.query
                 .filter_by(stream_name=chan, stream_date=current_date)
