@@ -477,17 +477,23 @@ class StatsBot(commands.Bot):
         from main import app
 
         with app.app_context():
-            rows = (
+            last = (
                 TimeSeries.query
                 .filter_by(stream_name=chan)
-                .order_by(TimeSeries.id)
-                .all()
+                .order_by(TimeSeries.id.desc())
+                .first()
             )
-            if not rows:
+            if not last:
                 return
 
-            first = rows[0]
-            last  = rows[-1]
+            first = (
+                TimeSeries.query
+                .filter_by(stream_name=chan, stream_date=last.stream_date)
+                .order_by(TimeSeries.id)
+                .first()
+            )
+            if not first:
+                return
 
             # sentiment stats across all snapshots
             avg_sent, min_sent, max_sent = db.session.query(
