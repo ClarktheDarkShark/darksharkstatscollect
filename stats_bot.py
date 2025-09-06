@@ -340,7 +340,7 @@ class StatsBot(commands.Bot):
                     'poll_participation':     0,
                     'predictions_run':        0,
                     'prediction_participants':0,
-                    'game_category':          (live.game_name or "unknown").lower(),
+                    'game_category':          live.game_name or "Unknown",
                     'category_changes':       0,
                     'title_length':           len(live.title or ""),
                     'has_giveaway':           False,
@@ -477,11 +477,23 @@ class StatsBot(commands.Bot):
         from main import app
 
         with app.app_context():
-            last = (
+            # Fetch the latest snapshot to determine the current stream date,
+            # then restrict the aggregation to rows from that date only.
+            latest = (
                 TimeSeries.query
                 .filter_by(stream_name=chan)
                 .order_by(TimeSeries.id.desc())
                 .first()
+            )
+            if not latest:
+                return
+
+            current_date = latest.stream_date
+            rows = (
+                TimeSeries.query
+                .filter_by(stream_name=chan, stream_date=current_date)
+                .order_by(TimeSeries.id)
+                .all()
             )
             if not last:
                 return

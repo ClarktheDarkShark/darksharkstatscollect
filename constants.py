@@ -37,7 +37,8 @@ TEST_USERS = [
     'jynxzi',
     'agent00',
     'burtonttv',
-    'bluesr']
+    'bluesr',
+    'stuffster']
 
 DEFAULT_PROMPT = [
                 {
