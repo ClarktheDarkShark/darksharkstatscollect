@@ -540,7 +540,7 @@ class StatsBot(commands.Bot):
                     DailyStats.stream_date >= seven_days_ago,
                     DailyStats.stream_date < last.stream_date,
                 )
-                .scalar() or 0.0
+                .scalar()
             )
             avg_subs_3 = (
                 db.session.query(func.avg(DailyStats.total_subscriptions))
@@ -549,7 +549,7 @@ class StatsBot(commands.Bot):
                     DailyStats.stream_date >= three_days_ago,
                     DailyStats.stream_date < last.stream_date,
                 )
-                .scalar() or 0.0
+                .scalar()
             )
             viewers_3d_moving_avg = (
                 db.session.query(func.avg(DailyStats.avg_concurrent_viewers))
@@ -558,7 +558,7 @@ class StatsBot(commands.Bot):
                     DailyStats.stream_date >= three_days_ago,
                     DailyStats.stream_date < last.stream_date,
                 )
-                .scalar() or 0.0
+                .scalar()
             )
 
             prev_peak = prev.peak_concurrent_viewers if prev else last.peak_concurrent_viewers
@@ -610,21 +610,35 @@ class StatsBot(commands.Bot):
                 moderation_actions        = last.moderation_actions,
                 messages_deleted          = last.messages_deleted,
                 timeouts_bans             = last.timeouts_bans,
-                avg_sentiment_score       = float(avg_sent or 0.0),
+                avg_sentiment_score       = float(avg_sent) if avg_sent is not None else None,
                 min_sentiment_score       = min_sent,
                 max_sentiment_score       = max_sent,
                 positive_negative_ratio   = last.positive_negative_ratio,
                 subs_per_avg_viewer       = last.subs_per_avg_viewer,
                 chat_msgs_per_viewer      = last.chat_msgs_per_viewer,
-                subs_7d_moving_avg        = float(avg_subs_7),
-                subs_3d_moving_avg        = float(avg_subs_3),
-                viewers_3d_moving_avg     = float(viewers_3d_moving_avg),
+                subs_7d_moving_avg        = float(avg_subs_7) if avg_subs_7 is not None else None,
+                subs_3d_moving_avg        = float(avg_subs_3) if avg_subs_3 is not None else None,
+                viewers_3d_moving_avg     = float(viewers_3d_moving_avg) if viewers_3d_moving_avg is not None else None,
                 day_over_day_peak_change  = day_over_day_peak_change,
                 gift_subs_bool            = last.gift_subs_bool,
             )
-            db.session.add(daily)
-            db.session.commit()
-            print(f"[Stream session for {chan}] stats committed to DB")
+            # Validate required (non-nullable) fields before committing
+            required_cols = [
+                c.name for c in DailyStats.__table__.columns
+                if not c.nullable and not c.primary_key
+            ]
+            missing = [col for col in required_cols if getattr(daily, col) is None]
+            if missing:
+                print(f"[Stream session for {chan}] missing data for: {', '.join(missing)}. Stats not committed.")
+                return
+
+            try:
+                db.session.add(daily)
+                db.session.commit()
+                print(f"[Stream session for {chan}] stats committed to DB")
+            except Exception as e:
+                db.session.rollback()
+                print(f"[Stream session for {chan}] commit failed: {e}")
 
         # clean-up
         self.stats_by_channel.pop(chan, None)
