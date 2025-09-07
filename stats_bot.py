@@ -486,6 +486,9 @@ class StatsBot(commands.Bot):
                 .first()
             )
             if not last:
+                print()
+                print('No last. returning')
+                print()
                 return
 
             current_date = last.stream_date
@@ -495,8 +498,7 @@ class StatsBot(commands.Bot):
                 .order_by(TimeSeries.id)
                 .all()
             )
-            if not last:
-                return
+
 
             first = (
                 TimeSeries.query
@@ -505,6 +507,9 @@ class StatsBot(commands.Bot):
                 .first()
             )
             if not first:
+                print()
+                print('No first. returning')
+                print()
                 return
 
             # sentiment stats across all snapshots
@@ -619,7 +624,7 @@ class StatsBot(commands.Bot):
             )
             db.session.add(daily)
             db.session.commit()
-            print(f"[{chan}] stats committed to DB")
+            print(f"[Stream session for {chan}] stats committed to DB")
 
         # clean-up
         self.stats_by_channel.pop(chan, None)
