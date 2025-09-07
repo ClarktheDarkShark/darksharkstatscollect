@@ -766,7 +766,7 @@ class StatsBot(commands.Bot):
             )
             db.session.add(row)
             db.session.commit()
-            print(f"[{chan}] stats committed to DB")
+            # print(f"[{chan}] stats committed to DB")
 
 
 
