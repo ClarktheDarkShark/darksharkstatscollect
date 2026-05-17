@@ -32,6 +32,18 @@ TEST_USERS = [
     'incendieric',
     'steelovsky',
 
+    # Added 2026-05-17 from the same live/current criteria.
+    'elchakotay',
+    'qitips',
+    'mirrixaxa',
+    'hvide300',
+    'young_matt_teen',
+    'vgtv_ultimate',
+    'donwippo',
+    'saremugames',
+    'boat3d',
+    'doobiedeejay',
+
     'smallant', 
     'alaskabel', 
     'smallantmom', 
@@ -214,7 +226,6 @@ SLANG_TERMS = [
 # ]
 
 SEED_HISTORY = []
-
 
 
 
