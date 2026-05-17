@@ -56,11 +56,6 @@ TEST_USERS = [
     'legendarymihawk',
     'trizzytherapper',
     'geniusuk',
-    'qitips',
-    'meem_tekken',
-    'pochilin',
-    'smaugy',
-    'saremugames',
     'mewtwo2u',
     'jerriduk',
     'doodlesvt',
@@ -232,7 +227,6 @@ SLANG_TERMS = [
 # ]
 
 SEED_HISTORY = []
-
 
 
 
