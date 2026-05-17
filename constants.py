@@ -56,11 +56,6 @@ TEST_USERS = [
     'legendarymihawk',
     'trizzytherapper',
     'geniusuk',
-    'donwippo',
-    'yoredz_tk',
-    'elchakotay',
-    '1adrianaries1',
-    'mirrixaxa',
     'qitips',
     'meem_tekken',
     'pochilin',
@@ -237,7 +232,6 @@ SLANG_TERMS = [
 # ]
 
 SEED_HISTORY = []
-
 
 
 
