@@ -38,7 +38,41 @@ TEST_USERS = [
     'agent00',
     'burtonttv',
     'bluesr',
-    'stuffster']
+    'stuffster',
+
+    # Added 2026-05-17 from live Twitch Helix category checks.
+    # Criteria: currently active, Affiliate/Partner, recent broadcasts,
+    # Yagami-adjacent category, and small/mid live-viewer scale.
+    'inkognito_tk',
+    'momodog',
+    'landon_d',
+    'fergus2k8',
+    'trigggaj',
+    'samploo_',
+    'eshenna',
+    'shin_blade_',
+    'ancientdragon',
+    'larrylurr',
+    'legendarymihawk',
+    'trizzytherapper',
+    'geniusuk',
+    'donwippo',
+    'yoredz_tk',
+    'elchakotay',
+    '1adrianaries1',
+    'mirrixaxa',
+    'qitips',
+    'meem_tekken',
+    'pochilin',
+    'smaugy',
+    'saremugames',
+    'mewtwo2u',
+    'jerriduk',
+    'doodlesvt',
+    'thealgorerhythm',
+    'revven91',
+    'incendieric',
+    'steelovsky']
 
 DEFAULT_PROMPT = [
                 {
@@ -203,7 +237,6 @@ SLANG_TERMS = [
 # ]
 
 SEED_HISTORY = []
-
 
 
 
