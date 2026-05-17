@@ -181,9 +181,9 @@ class StatsBot(commands.Bot):
     async def event_ready(self):
         print(f"Logged in as | {self.nick}")
         # join the remaining channels in small bursts
-        for i in range(0, len(self._queued_channels), 5):
-            await self.join_channels(self._queued_channels[i : i + 5])
-            await asyncio.sleep(2)
+        for i in range(0, len(self._queued_channels), 4):
+            await self.join_channels(self._queued_channels[i : i + 4])
+            await asyncio.sleep(4)
         print(f"Connected to: {[ch.name for ch in self.connected_channels if ch]}")
 
         # 🔺  NOW start the polling loop (all joins finished)
