@@ -8,28 +8,6 @@ CHANNEL_NAME_TEST = 'darksharkai'
 
 MAIN_CHANNELS = ['thelegendyagami', 'clarkthedarkshark']
 TEST_USERS = [
-    'smallant', 
-    'alaskabel', 
-    'smallantmom', 
-    'necros', 
-    'obsydyon', 
-    'naadofett', 
-    'ellie_minibot',
-    'luthimir',
-    'alinity',
-    'peach',
-    'boymetgirl',
-    'boesschen',
-    'l3layze',
-    'chainsawchody',
-    'caseoh_',
-    'rdcmysticlee',
-    'jynxzi',
-    'agent00',
-    'burtonttv',
-    'bluesr',
-    'stuffster',
-
     # Added 2026-05-17 from live Twitch Helix category checks.
     # Criteria: currently active, Affiliate/Partner, recent broadcasts,
     # Yagami-adjacent category, and small/mid live-viewer scale.
@@ -52,7 +30,26 @@ TEST_USERS = [
     'thealgorerhythm',
     'revven91',
     'incendieric',
-    'steelovsky']
+    'steelovsky',
+
+    'smallant', 
+    'alaskabel', 
+    'smallantmom', 
+    'necros', 
+    'obsydyon', 
+    'naadofett', 
+    'ellie_minibot',
+    'luthimir',
+    'alinity',
+    'peach',
+    'boymetgirl',
+    'boesschen',
+    'l3layze',
+    'chainsawchody',
+    'caseoh_',
+    'rdcmysticlee',
+    'jynxzi',
+    'agent00']
 
 DEFAULT_PROMPT = [
                 {
@@ -217,7 +214,6 @@ SLANG_TERMS = [
 # ]
 
 SEED_HISTORY = []
-
 
 
 
