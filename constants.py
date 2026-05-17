@@ -12,26 +12,16 @@ TEST_USERS = [
     'alaskabel', 
     'smallantmom', 
     'necros', 
-    'ari_hokage', 
     'obsydyon', 
     'naadofett', 
     'ellie_minibot',
-    'clauvio',
     'luthimir',
-    'tinysnub',
     'alinity',
     'peach',
     'boymetgirl',
     'boesschen',
     'l3layze',
-    'strikerhutassa',
     'chainsawchody',
-    'Barbarousking',
-    'shroud',
-    'raysfire',
-    'player5',
-    'beardandthehair',
-    'KPVI0L3t',
     'caseoh_',
     'rdcmysticlee',
     'jynxzi',
@@ -227,7 +217,6 @@ SLANG_TERMS = [
 # ]
 
 SEED_HISTORY = []
-
 
 
 
