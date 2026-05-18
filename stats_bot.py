@@ -904,27 +904,37 @@ class StatsBot(commands.Bot):
             return 0.5  # neutral default
 
         # ── 4) Build the prompt ─────────────────────────────────────────────────
-        prompt = (
-            "You are a sentiment analysis assistant. Return ONE decimal number "
-            "between 0.00 and 1.00 (e.g. 0.75) for these messages:\n\n"
-            + "\n".join(msgs)
+        system_prompt = (
+            "You are a sentiment analysis assistant. "
+            "Return ONLY one decimal number between 0.00 and 1.00 (e.g. 0.75). "
+            "No other text."
         )
+        user_prompt = "Messages:\n\n" + "\n".join(msgs)
 
         # ── 5) Call OpenAI & handle errors ──────────────────────────────────────
         try:
             resp = await self.openai_model_calls(
                 model=model,
-                messages=[{"role": "system", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
                 max_tokens=5,
                 temperature=0.0
             )
             raw = resp.choices[0].message.content.strip()
-            m = re.search(r"\d\.\d+", raw)
-            score = float(m.group()) if m else float(raw)
+            m = re.search(r"(?<!\d)(?:0(?:\.\d+)?|1(?:\.0+)?)(?!\d)", raw)
+            if not m:
+                print(f"[{chan}] sentiment analysis returned non-numeric content: {raw!r}")
+                return 0.5
+            score = float(m.group())
             return max(0.0, min(1.0, score))
 
         except BadRequestError as e:
             print(f"[{chan}] sentiment analysis failed: {e}")
+            return 0.5
+        except Exception as e:
+            print(f"[{chan}] sentiment analysis crashed: {type(e).__name__}: {e}")
             return 0.5
     # ─────────────────────────  CLEANUP  ──────────────────────────────────
     def __del__(self):
