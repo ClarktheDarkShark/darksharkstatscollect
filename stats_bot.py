@@ -234,6 +234,18 @@ class StatsBot(commands.Bot):
             chs = [ch.name for ch in self.connected_channels if ch]
             if not chs:
                 print("[watchdog] No connected channels detected.")
+            running = False
+            if hasattr(self.metrics_collector, "is_running"):
+                running = self.metrics_collector.is_running()
+            elif hasattr(self.metrics_collector, "_task"):
+                task = getattr(self.metrics_collector, "_task", None)
+                running = bool(task and not task.done())
+            if not running:
+                print("[watchdog] metrics_collector is not running; restarting.")
+                try:
+                    self.metrics_collector.start()
+                except RuntimeError as e:
+                    print(f"[watchdog] metrics_collector restart skipped: {e}")
         except Exception as e:
             print(f"[watchdog] Error checking status: {e}")
 
@@ -242,31 +254,36 @@ class StatsBot(commands.Bot):
     @routines.routine(seconds=METRICS_INC)
     async def metrics_collector(self):
         await self.wait_for_ready()
-        await self.save_chat_history()
+        try:
+            await self.save_chat_history()
 
-        channels = [ch.name for ch in self.connected_channels if ch]
-        if not channels:          # nothing joined yet → just wait for next tick
-            return
-        streams  = await self.fetch_streams(user_logins=channels)   # live only
-        now_live = {s.user.name.lower() for s in streams}
+            channels = [ch.name for ch in self.connected_channels if ch]
+            if not channels:          # nothing joined yet → just wait for next tick
+                return
+            streams  = await self.fetch_streams(user_logins=channels)   # live only
+            now_live = {s.user.name.lower() for s in streams}
 
-        # newly-started streams
-        for s in streams:
-            name = s.user.name.lower()
-            if name not in self.live_channels:
-                try:
-                    await self._on_stream_start(s)
-                except Exception:
-                    import traceback; traceback.print_exc()
+            # newly-started streams
+            for s in streams:
+                name = s.user.name.lower()
+                if name not in self.live_channels:
+                    try:
+                        await self._on_stream_start(s)
+                    except Exception:
+                        import traceback; traceback.print_exc()
 
-        # per-stream polling metrics
-        await self._collect_polling_metrics(streams)
+            # per-stream polling metrics
+            await self._collect_polling_metrics(streams)
 
-        # streams that ended
-        for ended in self.live_channels - now_live:
-            await self._on_stream_end(ended)
+            # streams that ended
+            for ended in self.live_channels - now_live:
+                await self._on_stream_end(ended)
 
-        self.live_channels = now_live
+            self.live_channels = now_live
+        except Exception as e:
+            import traceback
+            print(f"[metrics_collector] tick failed: {type(e).__name__}: {e}")
+            traceback.print_exc()
 
     # ─────────────────────────  STREAM START  ───────────────────────────────
     async def _on_stream_start(self, live):
