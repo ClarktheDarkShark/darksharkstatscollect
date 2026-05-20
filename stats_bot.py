@@ -647,15 +647,48 @@ class StatsBot(commands.Bot):
             missing = [col for col in required_cols if getattr(daily, col) is None]
             if missing:
                 print(f"[Stream session for {chan}] missing data for: {', '.join(missing)}. Stats not committed.")
-                return
+            else:
+                try:
+                    existing = (
+                        DailyStats.query
+                        .filter_by(
+                            stream_name=chan,
+                            stream_date=last.stream_date,
+                            stream_start_time=first.stream_start_time,
+                        )
+                        .order_by(DailyStats.id.desc())
+                        .first()
+                    )
 
-            try:
-                db.session.add(daily)
-                db.session.commit()
-                print(f"[Stream session for {chan}] stats committed to DB")
-            except Exception as e:
-                db.session.rollback()
-                print(f"[Stream session for {chan}] commit failed: {e}")
+                    if existing:
+                        existing_duration = existing.stream_duration if existing.stream_duration is not None else -1
+                        new_duration = daily.stream_duration if daily.stream_duration is not None else -1
+
+                        # Keep whichever row appears to be the most complete session summary.
+                        # This prevents duplicate (stream_name, stream_date, stream_start_time) rows when
+                        # the end-of-stream handler runs more than once (disconnect/reconnect, etc.).
+                        if new_duration <= existing_duration:
+                            print(
+                                f"[Stream session for {chan}] daily_stats already present (id={existing.id}); "
+                                f"keeping existing duration={existing_duration} >= new duration={new_duration}"
+                            )
+                        else:
+                            for col in DailyStats.__table__.columns:
+                                if col.primary_key:
+                                    continue
+                                setattr(existing, col.name, getattr(daily, col.name))
+                            db.session.commit()
+                            print(
+                                f"[Stream session for {chan}] updated existing daily_stats row (id={existing.id}) "
+                                f"with longer duration={new_duration}"
+                            )
+                    else:
+                        db.session.add(daily)
+                        db.session.commit()
+                        print(f"[Stream session for {chan}] stats committed to DB")
+                except Exception as e:
+                    db.session.rollback()
+                    print(f"[Stream session for {chan}] commit failed: {e}")
 
         # clean-up
         self.stats_by_channel.pop(chan, None)
