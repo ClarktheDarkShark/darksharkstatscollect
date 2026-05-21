@@ -5,10 +5,12 @@ from db import db
 class DailyStats(db.Model):
     __tablename__ = 'daily_stats'
 
+    id = db.Column(db.BigInteger, primary_key=True, autoincrement=True)
+
     # Date: date of the stream (YYYY-MM-DD)
     stream_date = db.Column(
         db.Date,
-        primary_key=True
+        nullable=False
     )  # e.g. date(2025, 6, 8)
 
     # String: day of week ("Monday" – "Sunday")
@@ -33,7 +35,6 @@ class DailyStats(db.Model):
     stream_start_time = db.Column(
         db.Time,
         nullable=False,
-        primary_key=True,
     )  # e.g. time(19, 30)
 
     # Integer: days since previous stream
